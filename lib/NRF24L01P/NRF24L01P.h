@@ -84,7 +84,7 @@ class Radio {
 private:
     uint8_t ss_pin;
     uint8_t ce_pin;
-    uint8_t address[5];
+    uint8_t address_width;
 
     void send_packet();
 
@@ -101,6 +101,8 @@ public:
     /**
     */
     uint8_t read_register(uint8_t reg);
+
+	uint8_t read_register(uint8_t reg, uint8_t* buffer, uint8_t length);
 
     uint8_t write_register(uint8_t reg, uint8_t value);
 
@@ -121,6 +123,24 @@ public:
     uint8_t get_payload(uint8_t* buffer, uint8_t length);
 
     uint8_t get_payload_width();
+
+	void begin();
+
+	void send_to(uint8_t* address, uint8_t* payload, uint8_t length);
+
+	void clear_tx();
+
+	uint8_t get_config();
+
+	void flush_tx();
+
+	void flush_rx();
+
+	void set_tx_address(uint8_t* address);
+
+	void set_rx_address(uint8_t pipe, uint8_t* address);
+
+	void get_rx_address(uint8_t pipe, uint8_t* buffer);
 
     Radio(uint8_t _ss_pin, uint8_t _ce_pin);
 };
