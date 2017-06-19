@@ -14,8 +14,11 @@ void Radio::end_transaction() {
 
 void Radio::send_packet() {
     digitalWrite(ce_pin, HIGH);
-    while (!(get_status() & (_BV(MAX_RT) | _BV(TX_DS)))) {}
-    digitalWrite(ce_pin, LOW);
+    // do {
+		delayMicroseconds(20);
+	// } whitle (!(get_status() & (_BV(MAX_RT) | _BV(TX_DS))));
+
+	digitalWrite(ce_pin, LOW);
 }
 
 uint8_t Radio::read_register(uint8_t reg) {
@@ -27,10 +30,11 @@ uint8_t Radio::read_register(uint8_t reg) {
     return result;
 }
 
-uint8_t Radio::read_register(uint8_t reg, uint8_t *buffer, uint8_t length) {
+uint8_t Radio::read_register(uint8_t reg, void *buffer, uint8_t length) {
 	start_transaction();
+	uint8_t* tmp = reinterpret_cast<uint8_t*>(buffer);
 	uint8_t status = SPI.transfer(COMMANDS::R_REGISTER | reg);
-	while (length--) *buffer++ = SPI.transfer(COMMANDS::NOP);
+	while (length--) *tmp++ = SPI.transfer(COMMANDS::NOP);
 	end_transaction();
 
 	return status;
@@ -45,10 +49,11 @@ uint8_t Radio::write_register(uint8_t reg, uint8_t value) {
     return status;
 }
 
-uint8_t Radio::write_register(uint8_t reg, uint8_t* value, uint8_t length) {
+uint8_t Radio::write_register(uint8_t reg, void* value, uint8_t length) {
     start_transaction();
+	uint8_t* tmp = reinterpret_cast<uint8_t*>(value);
     uint8_t status = SPI.transfer(COMMANDS::W_REGISTER | reg);
-    while (length--) SPI.transfer(*value++);
+    while (length--) SPI.transfer(*tmp++);
     end_transaction();
 
     return status;
@@ -64,20 +69,23 @@ void Radio::send_no_ack(uint8_t* payload, uint8_t length) {
     send_packet();
 }
 
-void Radio::send_to(uint8_t* address, uint8_t* payload, uint8_t length) {
+bool Radio::send_to(void* address, void* payload, uint8_t length) {
 	set_tx_address(address);
 	set_rx_address(0, address);
 
 	clear_tx();
 
+	uint8_t* tmp = reinterpret_cast<uint8_t*>(payload);
+
 	start_transaction();
 	SPI.transfer(COMMANDS::W_TX_PAYLOAD);
-	while (length--) SPI.transfer(*payload++);
+	while (length--) SPI.transfer(*tmp++);
+	// SPI.transfer(24);
 	end_transaction();
 
     send_packet();
 
-
+	return get_status() & _BV(TX_DS);
 }
 
 uint8_t Radio::execute_cmd(uint8_t cmd) {
@@ -87,20 +95,19 @@ uint8_t Radio::execute_cmd(uint8_t cmd) {
     return result;
 }
 
-void Radio::ping_master() {
-    uint8_t address[] = {0, 0, 0, 0, 0};
-    write_register(REGISTER_MAP::TX_ADDR, address, 5);
-
-    // send_no_ack(uint[], 5);
-
-}
-
 void Radio::start_listening() {
     write_register(REGISTER_MAP::CONFIG, read_register(REGISTER_MAP::CONFIG) | _BV(PWR_UP) | _BV(PRIM_RX));
-    // write_register(REGISTER_MAP::STATUS, _BV(MAX_RT) | _BV(RX_DR) | _BV(TX_DS));
+    write_register(REGISTER_MAP::STATUS, _BV(MAX_RT) | _BV(RX_DR) | _BV(TX_DS));
 
     digitalWrite(ce_pin, HIGH);
     delayMicroseconds(150);
+}
+
+void Radio::stop_listening() {
+	write_register(REGISTER_MAP::CONFIG, read_register(REGISTER_MAP::CONFIG) & ~_BV(PRIM_RX));
+
+	digitalWrite(ce_pin, LOW);
+	delayMicroseconds(30);
 }
 
 uint8_t Radio::get_status() {
@@ -112,9 +119,7 @@ uint8_t Radio::get_status() {
 }
 
 bool Radio::available() {
-    // uint8_t status = get_status();
-	uint8_t status = read_register(REGISTER_MAP::FIFO_STATUS);
-    return !(status & 1);
+    return get_status() & _BV(RX_DR);
 }
 
 uint8_t Radio::get_payload_width() {
@@ -126,14 +131,13 @@ uint8_t Radio::get_payload_width() {
     return result;
 }
 
-uint8_t Radio::get_payload(uint8_t* buffer, uint8_t length) {
+uint8_t Radio::get_payload(void* buffer, uint8_t length) {
 	write_register(REGISTER_MAP::STATUS, _BV(RX_DR));
 
+	uint8_t* tmp = reinterpret_cast<uint8_t*>(buffer);
 	start_transaction();
 	uint8_t status = SPI.transfer(COMMANDS::R_RX_PAYLOAD);
-	// while (length--) *buffer++ = SPI.transfer(COMMANDS::NOP);
-	for (int i = 0; i < length; i++)
-		buffer[i] = SPI.transfer(COMMANDS::NOP);
+	while (length--) *tmp++ = SPI.transfer(COMMANDS::NOP);
 	end_transaction();
 
 	return status;
@@ -175,17 +179,13 @@ void Radio::begin() {
 
 	delayMicroseconds(150);
 
-	// write_register(REGISTER_MAP::FEATURE, _BV(EN_DPL) | _BV(EN_DYN_ACK));
-	write_register(REGISTER_MAP::FEATURE, 0);
-	// TODO: add bit mnemonics for DYNPD
-	write_register(REGISTER_MAP::DYNPD, 0);
+	write_register(REGISTER_MAP::FEATURE, _BV(EN_DPL));
+	write_register(REGISTER_MAP::DYNPD, 3);
+	write_register(REGISTER_MAP::EN_AA, 3);
 
-	// write_register(REGISTER_MAP::SETUP_RETR, 0b00110011);
+	write_register(REGISTER_MAP::SETUP_RETR, 0b00110011);
 
 	write_register(REGISTER_MAP::STATUS, _BV(MAX_RT) | _BV(RX_DR) | _BV(TX_DS));
-
-	write_register(REGISTER_MAP::RX_PW_P0, 4);
-	write_register(REGISTER_MAP::RX_PW_P1, 4);
 
 	address_width = (0x03 & read_register(REGISTER_MAP::SETUP_AW)) + 2;
 
@@ -193,14 +193,18 @@ void Radio::begin() {
 	flush_tx();
 }
 
-void Radio::get_rx_address(uint8_t pipe, uint8_t* buffer) {
-	read_register(REGISTER_MAP::RX_ADDR_P0 + pipe, buffer, address_width);
+void Radio::get_rx_address(uint8_t pipe, void* buffer) {
+	read_register(REGISTER_MAP::RX_ADDR_P0 + pipe, buffer, 5);
 }
 
-void Radio::set_rx_address(uint8_t pipe, uint8_t* buffer) {
-	write_register(REGISTER_MAP::RX_ADDR_P0 + pipe, buffer, address_width);
+void Radio::set_rx_address(uint8_t pipe, void* buffer) {
+	write_register(REGISTER_MAP::RX_ADDR_P0 + pipe, buffer, 5);
 }
 
-void Radio::set_tx_address(uint8_t* buffer) {
-	write_register(REGISTER_MAP::TX_ADDR, buffer, address_width);
+void Radio::set_tx_address(void* buffer) {
+	write_register(REGISTER_MAP::TX_ADDR, buffer, 5);
+}
+
+void Radio::get_tx_address(void* buffer) {
+	read_register(REGISTER_MAP::TX_ADDR, buffer, 5);
 }
