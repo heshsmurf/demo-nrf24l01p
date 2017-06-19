@@ -65,16 +65,19 @@ void loop() {
 	} else {
 		if (Serial.available()) {
 			char c = Serial.read();
+			Serial.flush();
 			uint8_t val;
-			if (c == 'i') {
-				Serial.print("Put the light ON... ");
-				val = 42;
-			} else if (c == 'o') {
-				Serial.print("Put the light OFF... ");
-				val = 24;
-			}
+			if (c == 'i' || c == 'o') {
+				if (c == 'i') {
+					Serial.print("Put the light ON... ");
+					val = 42;
+				} else {
+					Serial.print("Put the light OFF... ");
+					val = 24;
+				}
 
-			Serial.println(radio.send_to("slave", &val, 1) ? " DONE" : " FAILED");
+				Serial.println(radio.send_to("slave", &val, 1) ? " DONE" : " FAILED");
+			}
 		}
 	}
 }
